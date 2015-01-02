@@ -55,6 +55,7 @@ Understanding output
 --------------------
 MRTECollector will print internal processing status every 10 seconds.
 
+<pre>
 $ MRTECollector.sh
 [INFO]  MRTECollector : Setting capture filter to ' tcp dst port 3306 '
 [INFO]  Send init database information of all session (1). Wait ...
@@ -70,7 +71,8 @@ DateTime                TotalPacket     ValidPacket    PacketDropped    PacketIf
 2015-01-02 21:14:06           39953           34146                0                  0                    0               0
 2015-01-02 21:14:16           39943           34179                0                  0                    0               0
 ...
-
+</pre>
+<br>
 <ul>
 <li>TotalPacket 	: Total count of packet captured by pcap library 
 <li>ValidPacket		: Valid packet means just simple tcp/ip packet which has user data(e.g. tcp/ip packet which have only ACK is not valid packet in MRTECollector)
@@ -83,9 +85,11 @@ DateTime                TotalPacket     ValidPacket    PacketDropped    PacketIf
 
 Limitations
 -----------
-1. MRTECollector can't capture server-side prepared statements.
-   A lot of people think they use real prepared statement in their MySQL server configurations.
-   But real server side prepared statements are used only if you set serverPreps option on your jdbc connection url.
-   If not, now you are using client side prepare statement (it's just a emulation of prepared statement).
-2. MRTECollector have to be run on source MySQL server. 
-   PCap library can't capture the packet of physical server outside.
+<ol>
+<li>MRTECollector can't capture server-side prepared statements.<br>
+   A lot of people think they use real prepared statement in their MySQL server configurations.<br>
+   But real server side prepared statements are used only if you set serverPreps option on your jdbc connection url.<br>
+   If not, now you are using client side prepare statement (it's just a emulation of prepared statement).<br>
+<li>MRTECollector have to be run on source MySQL server. <br>
+   PCap library can't capture the packet of physical server outside.<br>
+</ol>
