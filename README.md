@@ -18,25 +18,36 @@ How to build
 
 How to run
 ----------
+You can change MRTECollector.sh shell script based on "MRTECollector Parameter"
+
 <pre>
-./MRTECollector \
-  --interface="eth0" \
-  --port=3306 \
-  --snapshot_len=8192 \
-  --read_timeout=100 \
-  --queue_size=100 \
-  --thread_count=5 \
-  --rabbitmq_host="127.0.0.1" \
-  --rabbitmq_port=5672 \
-  --rabbitmq_user="guest" \
-  --rabbitmq_password="" \
-  --mysql_host="127.0.0.1" \
-  --mysql_user="mrte" \
-  --mysql_password=""
+./MRTECollector.sh
 </pre>
 
 
-Understanding how to work
+Run parameter
+-------------
+This is MRTECollector option list.
+
+<pre>
+<li>--interface			: Network interface to capture packet (example : eth0, lo")</li>
+<li>--port				: Network port to capture packet (This is the listening port of MySQL server)</li>
+<li>--snapshot_len		: Snapshot length of packet capture (default 8192)</li>
+<li>--read_timeout		: Read timeout of packet capture in milli-second (default 100 milli second)</li>
+<li>--thread_count		: Message queue publisher counter (default 5)</li>
+<li>--queue_size		: Internal queue length of each publisher thread (default 100)</li>
+<li>--rabbitmq_host		: Rabbit MQ server (hostname or ip-address)</li>
+<li>--rabbitmq_port		: Rabbit MQ server port (default 5672)</li>
+<li>--rabbitmq_user		: Rabbit MQ server user account (default "guest")</li>
+<li>--rabbitmq_password	: Rabbit MQ server user password (default "guest")</li>
+<li>--mysql_host		: Source MySQL server (hostname or ip-address)</li>
+<li>--mysql_user		: Soruce MySQL user account</li>
+<li>--mysql_password	: Source MySQL user password</li>
+<li>--help				: Print help message
+</pre>
+
+
+How to work
 -------------------------
 After starting MRTECollector with MRTECollector.sh, 
 MRTECollector will print packet capture's filtering option (Actually this is static built option, so you can't change this).
@@ -53,7 +64,7 @@ After that MRTECollector just put three information to Rabbit MQ. That's all.
 
 Understanding output
 --------------------
-MRTECollector will print internal processing status every 10 seconds.
+MRTECollector will print internal processing status every 10 seconds. And printed value is per second.
 
 <pre>
 $ MRTECollector.sh
