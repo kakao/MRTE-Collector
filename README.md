@@ -30,6 +30,7 @@ Run parameter
 This is MRTECollector option list.
 
 <pre>
+<ul>
 <li>--interface			: Network interface to capture packet (example : eth0, lo")</li>
 <li>--port				: Network port to capture packet (This is the listening port of MySQL server)</li>
 <li>--snapshot_len		: Snapshot length of packet capture (default 8192)</li>
@@ -43,7 +44,8 @@ This is MRTECollector option list.
 <li>--mysql_host		: Source MySQL server (hostname or ip-address)</li>
 <li>--mysql_user		: Soruce MySQL user account</li>
 <li>--mysql_password	: Source MySQL user password</li>
-<li>--help				: Print help message
+<li>--help				: Print help message</li>
+</ul>
 </pre>
 
 
