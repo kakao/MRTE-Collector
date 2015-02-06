@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 	"strings"
+	"errors"
 //	"sync/atomic"
 //	"container/list"
 //	"encoding/binary"
@@ -21,7 +22,6 @@ import (
 	"./github.com/streadway/amqp"
 	"./kakao.com/mrte"
 )
-
 
 const (
 	TYPE_IP  = 0x0800
@@ -52,17 +52,16 @@ var (
 	mq_host        = flag.String("rabbitmq_host", "", "Rabbit MQ server (hostname or ip-address)")
 	mq_port        = flag.Int("rabbitmq_port", 5672, "Rabbit MQ server port (default 5672)")
 	mq_user        = flag.String("rabbitmq_user", "", "Rabbit MQ server user account")
-	mq_password        = flag.String("rabbitmq_password", "", "Rabbit MQ server user password")
+	mq_password    = flag.String("rabbitmq_password", "", "Rabbit MQ server user password")
+	
+	mq_exchange_name = flag.String("rabbitmq_exchange_name", "mrte", "Rabbit MQ exchange name (default 'mrte')")
+	mq_routing_key = flag.String("rabbitmq_routing_key", "", "Rabbit MQ routing key (default '')")
 	
 	help    	= flag.Bool("help", false, "Print this message")
 )
 
 // Print status interval second
 const STATUS_INTERVAL_SECOND = uint64(10)
-// Initialize mqueue connection pool
-const exchange_name = ""  // DEFAULT exchange
-const exchange_type = "direct"
-const routing_key = "mrte"
 
 // Internal queue for rabbit mq publisher
 var queues []chan *mrte.MysqlRequest
@@ -73,6 +72,8 @@ var queues []chan *mrte.MysqlRequest
 var totalPacketCaptured   uint64
 var validPacketCaptureds  []uint64
 var mqErrorCounters       []uint64
+
+var localIpAddress net.IP
 
 
 /**
@@ -112,13 +113,14 @@ func main() {
 	// limitMemory(32*1024*1024/*Rlimit.Cur*/, 256*1024*1024/*Rlimit.Max*/)
 	
 	flag.Parse()
-	if *device=="" || device==nil ||
-		*mysql_host=="" || mysql_host==nil ||
-		*mysql_user=="" || mysql_user==nil ||
-		*mysql_password=="" || mysql_password==nil ||
-		*mq_host=="" || mq_host==nil ||
-		*mq_user=="" || mq_user==nil ||
-		*mq_password=="" || mq_password==nil ||
+	if device==nil || *device=="" ||
+		mysql_host==nil || *mysql_host=="" ||
+		mysql_user==nil || *mysql_user=="" ||
+		mysql_password==nil || *mysql_password=="" ||
+		mq_host==nil || *mq_host=="" ||
+		mq_user==nil || *mq_user=="" ||
+		mq_password==nil || *mq_password=="" ||
+		mq_exchange_name==nil || *mq_exchange_name=="" || mq_routing_key==nil ||  
 		*help {	
 		flag.Usage()
 		os.Exit(0)
@@ -126,7 +128,11 @@ func main() {
 
 	expr := fmt.Sprintf("tcp dst port %d", *port)
 	mq_uri := fmt.Sprintf("amqp://%s:%s@%s:%d/", *mq_user, *mq_password, *mq_host, *mq_port)
-
+	localIpAddress, dev_err := GetLocalIpAddress(*device)
+	if dev_err!=nil {
+		panic(dev_err)
+	}
+	
 	// 
 	//if *device == "" {
 	//	devs, err := pcap.FindAllDevs()
@@ -141,7 +147,10 @@ func main() {
 	//}
 
 	// Prepare rabbit mq connection
-	mqConnection := makeConnection(mq_uri)
+	mqConnection, mq_err := makeConnection(mq_uri, *mq_exchange_name, *mq_routing_key)
+	if mq_err!=nil {
+		panic(mq_err)
+	}
 	
 	// Prepare rabbit mq publisher
 	var realQueueSize = 100
@@ -161,7 +170,7 @@ func main() {
 		queues = append(queues, queue)
 		
 		// Run sub-thread(goroutine) for publishing message
-		go mrte.PublishMessage(workerIdx, mqConnection, exchange_name, exchange_type, routing_key, queue, &validPacketCaptureds[idx], &mqErrorCounters[idx])
+		go mrte.PublishMessage(workerIdx, mqConnection, *mq_exchange_name, *mq_routing_key, localIpAddress, queue, &validPacketCaptureds[idx], &mqErrorCounters[idx])
 	}
 
 	// Prepare packet capturer
@@ -361,13 +370,44 @@ func addSignalHandler(h *pcap.Pcap, host string, port int, user string, password
 	}()
 }
 
-func makeConnection(url string) *amqp.Connection{
+func makeConnection(url string, ex_name string, routing_key string) (*amqp.Connection, error){
 	conn, err := amqp.Dial(url)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	
-	return conn
+// This procedure will be handled by user manually
+//	channel, err := conn.Channel()
+//	if err != nil {
+//		return nil, err
+//	}
+//	
+//	if ex_init { 
+//		// If rabbitmq_initialize_exchange is true, then remove and re-declare exchange
+//		// If you want to run multiple MRTECollector on the same Rabbit MQ, then set rabbitmq_exchange_init=false.
+//		rm_err := channel.ExchangeDelete(ex_name, false/* Remove if used or not */, false/*Wait until completely removed*/)
+//		if rm_err!=nil { // if ExchangeDelete return error, channel will be closed automatically, so open new channel
+//			channel, err = conn.Channel()
+//			if err != nil {
+//				return nil, err
+//			}
+//		}
+//		
+//		err = channel.ExchangeDeclare(
+//			ex_name,      // name
+//			ex_type,      // type
+//			false,        // durable
+//			true,         // auto-deleted
+//			false,        // internal
+//			true,         // noWait
+//			nil,          // arguments
+//		)
+//		if err != nil {
+//			return nil, err
+//		}
+//	}
+	
+	return conn, nil
 }
 
 func sendSessionDefaultDatabase(host string, port int, user string, password string){
@@ -430,4 +470,26 @@ func sendSessionDefaultDatabase(host string, port int, user string, password str
 		bufferedCounter = 0
 		bufferedData = nil
 	}
+}
+
+func GetLocalIpAddress(interface_name string) (net.IP, error){
+	interfaces, _ := net.Interfaces()
+	for _, inter := range interfaces {
+		if inter.Name == interface_name {
+			addrs, err := inter.Addrs()
+			if err!=nil {
+ 				continue
+			}
+
+			for _, addr := range addrs{
+				if ipnet, ok := addr.(*net.IPNet); ok {
+					if ipnet.IP.To4() != nil {
+						return ipnet.IP, nil
+					}
+				}
+			}
+		}
+	}
+	
+	return nil, errors.New("Could not resolve ip address (v4) for " + interface_name)
 }

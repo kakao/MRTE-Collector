@@ -11,6 +11,8 @@
   --rabbitmq_port=5672 \
   --rabbitmq_user="guest" \
   --rabbitmq_password="" \
+  --rabbitmq_exchange_name="mrte" \
+  --rabbitmq_routing_key="" \
   --mysql_host="127.0.0.1" \
   --mysql_user="mrte" \
   --mysql_password=""
