@@ -17,6 +17,7 @@ import (
 //	"bufio"
 	"runtime"
 	"strconv"
+	"io/ioutil"
 	
 	"./github.com/miekg/pcap"
 	"./github.com/streadway/amqp"
@@ -56,6 +57,8 @@ var (
 	
 	mq_exchange_name = flag.String("rabbitmq_exchange_name", "mrte", "Rabbit MQ exchange name (default 'mrte')")
 	mq_routing_key = flag.String("rabbitmq_routing_key", "", "Rabbit MQ routing key (default '')")
+	
+	max_mem_mb     = flag.Int("max_mem_mb", 64, "How much memory collector use at maximum (this is for resident memory size)")
 	
 	help    	= flag.Bool("help", false, "Print this message")
 )
@@ -259,6 +262,11 @@ func main() {
                 uint64((packetIfDropped - pPacketIfDropped) / STATUS_INTERVAL_SECOND),
                 waitingQueueCounter,
                 uint64((mqErrorCounter - pMqErrorCounter) / STATUS_INTERVAL_SECOND))
+			
+			// Check memory usage before sleep
+			checkMemoryUsage(int64(*max_mem_mb) * 1024 * 1024)
+			
+			// Sleep
 			time.Sleep(1000 * time.Millisecond * time.Duration(STATUS_INTERVAL_SECOND)) // each 10 seconds
 			loopCounter++
 			
@@ -326,6 +334,82 @@ func main() {
 		// if shutdown==true {workPool.Shutdown("mq_publish")}
 	}
 	fmt.Fprintln(os.Stderr, "[INFO] MRTECollector : ", h.Geterror())
+}
+
+const (
+	statm_size = iota
+	statm_resident
+	statm_share
+	statm_text
+	statm_lib
+	statm_data
+	statm_dt /* over 2.6 */
+	STATM_FIELD_END
+)
+
+func checkMemoryUsage(limit int64)(){
+	var residentMemory int64
+	var procStatContents string
+	pageSize := int64(syscall.Getpagesize())
+	if b, e := ioutil.ReadFile("/proc/self/statm"); e == nil {
+		procStatContents = string(b)
+	}
+	
+	fields := strings.Fields(procStatContents)
+	if len(fields) >= (STATM_FIELD_END-1) {
+		if stat_value, e := strconv.ParseInt(fields[statm_resident], 10, 64); e == nil {
+			residentMemory = stat_value * pageSize
+		}
+	}
+	
+	if(residentMemory > limit){
+		printAgentMemoryStats();
+		panic("Memory usage is too high ("+strconv.FormatInt(residentMemory,10)+" > "+strconv.FormatInt(limit,10)+"), Increase memory limit or need to decrease memory usage")
+	}
+}
+
+func printAgentMemoryStats(){
+	// Get agent garbage collection status
+	memoryStats := new(runtime.MemStats)
+	runtime.ReadMemStats(memoryStats)
+
+	// Print memory status to log file
+	fmt.Printf("General statistics.\n")
+	fmt.Printf("    Alloc      : %v // bytes allocated and still in use\n", memoryStats.Alloc)
+	fmt.Printf("    TotalAlloc : %v // bytes allocated (even if freed)\n", memoryStats.TotalAlloc)
+	fmt.Printf("    Sys        : %v // bytes obtained from system (sum of XxxSys below)\n", memoryStats.Sys)
+	fmt.Printf("    Lookups    : %v // number of pointer lookups\n", memoryStats.Lookups)
+	fmt.Printf("    Mallocs    : %v // number of mallocs\n", memoryStats.Mallocs)
+	fmt.Printf("    Frees      : %v // number of frees\n", memoryStats.Frees)
+	fmt.Printf("    \n")
+	fmt.Printf("Main allocation heap statistics.\n")
+	fmt.Printf("    HeapAlloc    : %v // bytes allocated and still in use\n", memoryStats.HeapAlloc)
+	fmt.Printf("    HeapSys      : %v // bytes obtained from system\n", memoryStats.HeapSys)
+	fmt.Printf("    HeapIdle     : %v // bytes in idle spans\n", memoryStats.HeapIdle)
+	fmt.Printf("    HeapInuse    : %v // bytes in non-idle span\n", memoryStats.HeapInuse)
+	fmt.Printf("    HeapReleased : %v // bytes released to the OS\n", memoryStats.HeapReleased)
+	fmt.Printf("    HeapObjects  : %v // total number of allocated objects\n", memoryStats.HeapObjects)
+	fmt.Printf("    \n")
+	fmt.Printf("Low-level fixed-size structure allocator statistics.\n")
+	fmt.Printf("  Inuse is bytes used now.\n")
+	fmt.Printf("  Sys is bytes obtained from system.\n")
+	fmt.Printf("    StackInuse  : %v // bytes used by stack allocator\n", memoryStats.StackInuse)
+	fmt.Printf("    StackSys    : %v\n", memoryStats.StackSys)
+	fmt.Printf("    MSpanInuse  : %v // mspan structures\n", memoryStats.MSpanInuse)
+	fmt.Printf("    MSpanSys    : %v\n", memoryStats.MSpanSys)
+	fmt.Printf("    MCacheInuse : %v // mcache structures\n", memoryStats.MCacheInuse)
+	fmt.Printf("    MCacheSys   : %v\n", memoryStats.MCacheSys)
+	fmt.Printf("    BuckHashSys : %v // profiling bucket hash table\n", memoryStats.BuckHashSys)
+	fmt.Printf("    GCSys       : %v // GC metadata\n", memoryStats.GCSys)
+	fmt.Printf("    OtherSys    : %v // other system allocations\n", memoryStats.OtherSys)
+	fmt.Printf("    \n")
+	fmt.Printf("Garbage collector statistics.\n")
+	fmt.Printf("    NextGC       : %v // next collection will happen when HeapAlloc ≥ this amount\n", memoryStats.NextGC)
+	fmt.Printf("    LastGC       : %v // end time of last collection (nanoseconds since 1970)\n", memoryStats.LastGC)
+	fmt.Printf("    PauseTotalNs : %v\n", memoryStats.PauseTotalNs)
+	fmt.Printf("    NumGC        : %v\n", memoryStats.NumGC)
+	fmt.Printf("    EnableGC     : %v\n", memoryStats.EnableGC)
+	fmt.Printf("    DebugGC      : %v\n", memoryStats.DebugGC)
 }
 
 func limitMemory(cur uint64, max uint64) {
