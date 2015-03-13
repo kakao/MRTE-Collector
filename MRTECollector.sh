@@ -7,6 +7,7 @@
   --read_timeout=100 \
   --queue_size=100 \
   --thread_count=5 \
+  --max_mem_mb=64 \
   --rabbitmq_host="127.0.0.1" \
   --rabbitmq_port=5672 \
   --rabbitmq_user="guest" \
