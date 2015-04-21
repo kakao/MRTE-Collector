@@ -230,7 +230,9 @@ func main() {
 		pPacketIfDropped := uint64(0)
 		pMqErrorCounter := uint64(0)
 
+		idleSecondSinceLastPurgeGarbageConnection := 0
 		for {
+			startTime := time.Now()
 			if loopCounter % 20 == 0 {
 				fmt.Println()
 				fmt.Printf("DateTime                TotalPacket     ValidPacket    PacketDropped    PacketIfDropped      WaitingQueueCnt         MQError\n")
@@ -266,8 +268,19 @@ func main() {
 			// Check memory usage before sleep
 			checkMemoryUsage(int64(*max_mem_mb) * 1024 * 1024)
 			
+			// Send close-message for garbaged connection on MRTE-Player, on each 60 seconds
+			if idleSecondSinceLastPurgeGarbageConnection >= 60 {
+				idleSecondSinceLastPurgeGarbageConnection = 0
+				sendGarbageCollection(*mysql_host, int(*port), *mysql_user, *mysql_password)
+			}else{
+				idleSecondSinceLastPurgeGarbageConnection += int(STATUS_INTERVAL_SECOND)
+			}
+			
+			elapsedNanoSeconds := time.Since(startTime)
+			
 			// Sleep
-			time.Sleep(1000 * time.Millisecond * time.Duration(STATUS_INTERVAL_SECOND)) // each 10 seconds
+			// We have to calculate sleep-time with (10_second - above_processing_time)
+			time.Sleep(time.Second * time.Duration(STATUS_INTERVAL_SECOND) - elapsedNanoSeconds) // each 10 seconds,
 			loopCounter++
 			
 			pTotalPacketCaptured = cTotalPacketCaptured
@@ -312,6 +325,7 @@ func main() {
 			if currentWorkerId<0 {
 				currentWorkerId = 0
 			}
+			
 			packets[currentWorkerId] = append(packets[currentWorkerId], pkt)
 			bufferSizes[currentWorkerId] += uint64(pkt.Caplen)
 			if len(packets[currentWorkerId])<50 && bufferSizes[currentWorkerId]<(32*1024) {
@@ -494,9 +508,87 @@ func makeConnection(url string, ex_name string, routing_key string) (*amqp.Conne
 	return conn, nil
 }
 
+
+/**
+ * Last connection list
+ *  To send close-message for garbaged connection on MRTE-Player
+ */
+var connectionMap map[string]string
+
+func sendGarbageCollection(host string, port int, user string, password string){
+	currConnectionMap := make(map[string]string)
+	
+	// sessions array has array of "[ip:port][database]" pair 
+	sessions := mrte.GetSessionDefaultDatabase(host, port, user, password)
+	for idx:=0; (idx+1)<len(sessions); idx=idx+2 {
+		currConnectionMap[sessions[idx]] = "e"
+	}
+	
+	var bufferedData []byte
+	bufferedCounter := 0
+	for key, _ := range connectionMap {
+		if host_port, ok := currConnectionMap[key]; ok {
+			// Still existed connection
+		}else{
+			// Already closed connection
+			temp := strings.Split(string(host_port), ":")
+			if len(temp)!=2 {
+				continue;
+			}
+			
+			byteIp := net.ParseIP(temp[0]).To4()
+			if byteIp==nil {
+				continue /* if not IPv4 */
+			}
+			port, _ := strconv.ParseUint(temp[1], 10, 16)
+			bytePort := mrte.ConvertUint16ToBytesLE(uint16(port))
+			
+			// Make Mysql protocol so that transfer it to MYSQL_INIT_DB command through MQueue
+			// bufferLength := 3/*payload_len*/+1/*sequence*/+1/*command*/
+			mysqlPayloadLen := mrte.ConvertUint24ToBytesBE(uint32(1/*command*/))
+			
+			mysqlHeader := []byte{0 /* Sequence==0 */, 1 /* COM_QUIT */}
+			
+			payload := append(byteIp, bytePort...)
+			payload = append(payload, mysqlPayloadLen...)
+			payload = append(payload, mysqlHeader...)
+			
+			bufferedData = append(bufferedData, mrte.ConvertUint32ToBytesLE(uint32(len(payload)))...)
+			bufferedData = append(bufferedData, payload...)
+			bufferedCounter++
+			
+			if bufferedCounter>50 {
+				// Flush buffer to mq publisher
+				queues[0] <- &mrte.MysqlRequest{
+						BufferedData: bufferedData, 
+						Packets: nil,
+					}
+				
+				bufferedCounter = 0
+				bufferedData = nil
+			}
+		}
+	}
+	
+	if bufferedCounter>0 {
+		// Flush buffer to mq publisher
+		queues[0] <- &mrte.MysqlRequest{
+					BufferedData: bufferedData, 
+					Packets: nil,
+				} 
+			
+		bufferedCounter = 0
+		bufferedData = nil
+	}
+	
+	// set current connection to lastest_connection_map
+	connectionMap = currConnectionMap	
+}
+
 func sendSessionDefaultDatabase(host string, port int, user string, password string){
 	// sessions array has array of "[ip:port][database]" pair 
 	sessions := mrte.GetSessionDefaultDatabase(host, port, user, password)
+	currConnectionMap := make(map[string]string)
 	
 	var bufferedData []byte
 	bufferedCounter := 0
@@ -514,6 +606,9 @@ func sendSessionDefaultDatabase(host string, port int, user string, password str
 		if byteIp==nil {
 			continue /* if not IPv4 */
 		}
+		
+		currConnectionMap[host_port] = "e" // set current connection info(host + port) to connection map
+		
 		port, _ := strconv.ParseUint(temp[1], 10, 16)
 		bytePort := mrte.ConvertUint16ToBytesLE(uint16(port))
 		
@@ -554,6 +649,9 @@ func sendSessionDefaultDatabase(host string, port int, user string, password str
 		bufferedCounter = 0
 		bufferedData = nil
 	}
+	
+	// set current connection to lastest_connection_map
+	connectionMap = currConnectionMap
 }
 
 func GetLocalIpAddress(interface_name string) (net.IP, error){
