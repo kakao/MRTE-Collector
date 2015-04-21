@@ -48,7 +48,7 @@ func (req *MysqlRequest) publish(channel *amqp.Channel, exchange_name string, ro
 			pkt := req.Packets[idx]
 			pkt.Parse()
 			if pkt.IsValidTcpPacket && pkt.Payload!=nil && len(pkt.Payload)>0 {
-				if pkt.Payload!=nil && len(pkt.Payload)>5/* 3(len) + 1(sequence) + 1(command) */ {
+				if pkt.Payload!=nil && len(pkt.Payload)>=5/* 3(len) + 1(sequence) + 1(command) */ {
 					*validPacketCaptured = (*validPacketCaptured) + 1
 				
 					mysqlPayload = nil

@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strconv"
 	"io/ioutil"
+	"hash/adler32"
 	
 	"./github.com/miekg/pcap"
 	"./github.com/streadway/amqp"
@@ -527,11 +528,11 @@ func sendGarbageCollection(host string, port int, user string, password string){
 	var bufferedData []byte
 	bufferedCounter := 0
 	for key, _ := range connectionMap {
-		if host_port, ok := currConnectionMap[key]; ok {
+		if _, ok := currConnectionMap[key]; ok {
 			// Still existed connection
 		}else{
 			// Already closed connection
-			temp := strings.Split(string(host_port), ":")
+			temp := strings.Split(string(key), ":")
 			if len(temp)!=2 {
 				continue;
 			}
@@ -552,6 +553,10 @@ func sendGarbageCollection(host string, port int, user string, password string){
 			payload := append(byteIp, bytePort...)
 			payload = append(payload, mysqlPayloadLen...)
 			payload = append(payload, mysqlHeader...)
+			
+			// Add checksum
+			checksum := adler32.Checksum(payload[0:mrte.CHECKSUM_LENGTH])
+			payload = append(payload, mrte.ConvertUint32ToBytesLE(checksum)...)
 			
 			bufferedData = append(bufferedData, mrte.ConvertUint32ToBytesLE(uint32(len(payload)))...)
 			bufferedData = append(bufferedData, payload...)
@@ -622,7 +627,11 @@ func sendSessionDefaultDatabase(host string, port int, user string, password str
 		payload = append(payload, mysqlPayloadLen...)
 		payload = append(payload, mysqlHeader...)
 		payload = append(payload, init_db_bytes...)
-		
+
+		// Add checksum
+		checksum := adler32.Checksum(payload[0:mrte.CHECKSUM_LENGTH])
+		payload = append(payload, mrte.ConvertUint32ToBytesLE(checksum)...)
+
 		bufferedData = append(bufferedData, mrte.ConvertUint32ToBytesLE(uint32(len(payload)))...)
 		bufferedData = append(bufferedData, payload...)
 		bufferedCounter++
