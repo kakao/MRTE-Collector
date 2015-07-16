@@ -48,12 +48,19 @@ func (req *MysqlRequest) publish(channel *amqp.Channel, exchange_name string, ro
 			pkt := req.Packets[idx]
 			pkt.Parse()
 			if pkt.IsValidTcpPacket && pkt.Payload!=nil && len(pkt.Payload)>0 {
-				if pkt.Payload!=nil && len(pkt.Payload)>=5/* 3(len) + 1(sequence) + 1(command) */ {
+				// We should not check the length (Because it could be ip-fragmented packet), So we just check lenght>0 
+				// if pkt.Payload!=nil && len(pkt.Payload)>=5/* 3(len) + 1(sequence) + 1(command) */ {
+				if pkt.Payload!=nil && len(pkt.Payload)>0 {
 					*validPacketCaptured = (*validPacketCaptured) + 1
 				
 					mysqlPayload = nil
 					mysqlPayload = append(mysqlPayload, pkt.SrcIp...)
 					mysqlPayload = append(mysqlPayload, ConvertUint16ToBytesLE(pkt.TcpSrcPort)...)
+					// These 3 item are need for ip-reassembly
+					mysqlPayload = append(mysqlPayload, ConvertUint16ToBytesLE(pkt.IpIdentification)...)
+					mysqlPayload = append(mysqlPayload, pkt.IpFlags)
+					mysqlPayload = append(mysqlPayload, ConvertUint16ToBytesLE(pkt.IpFlagOffset)...)
+					
 					mysqlPayload = append(mysqlPayload, pkt.Payload...)
 					
 					// Add checksum
