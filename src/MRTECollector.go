@@ -551,13 +551,6 @@ func sendGarbageCollection(host string, port int, user string, password string){
 			mysqlHeader := []byte{0 /* Sequence==0 */, 1 /* COM_QUIT */}
 			
 			payload := append(byteIp, bytePort...)
-			
-			// These 3 item are need for ip-reassembly
-			// Ip Identification : 2 byte
-			// Ip Flags : 1 byte
-			// Ip Flag Offset : 2 byte
-			payload = append(payload, byte(0), byte(0), byte(0), byte(0), byte(0))
-			
 			payload = append(payload, mysqlPayloadLen...)
 			payload = append(payload, mysqlHeader...)
 			
@@ -631,13 +624,6 @@ func sendSessionDefaultDatabase(host string, port int, user string, password str
 		mysqlHeader := []byte{0 /* Sequence==0 */, 2 /* COM_INIT_DB */}
 		
 		payload := append(byteIp, bytePort...)
-		
-		// These 3 item are need for ip-reassembly
-		// Ip Identification : 2 byte
-		// Ip Flags : 1 byte
-		// Ip Flag Offset : 2 byte
-		payload = append(payload, byte(0), byte(0), byte(0), byte(0), byte(0))
-
 		payload = append(payload, mysqlPayloadLen...)
 		payload = append(payload, mysqlHeader...)
 		payload = append(payload, init_db_bytes...)

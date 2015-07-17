@@ -106,12 +106,6 @@ type TcpPacket struct {
 	Type      int // protocol type, see LINKTYPE_*
 	
 	IsValidTcpPacket bool
-	
-	// For ip re-assembly, we need this	
-	IpIdentification uint16
-	IpFlags uint8
-	IpFlagOffset uint16
-	
 	SrcIp      []byte
 	Protocol   uint8  // TCP or UDP or ...
 	
@@ -165,13 +159,6 @@ func (p *TcpPacket) Parse() {
 		pkt := p.Payload
 		Ihl := uint8(pkt[0]) & 0x0F
 		IpLength := binary.BigEndian.Uint16(pkt[2:4])
-		
-		// For ip re-assembly (we need ip-identification & ip-flags & ip-fragmentation-offset)
-		p.IpIdentification = binary.BigEndian.Uint16(pkt[4:6])
-		flags := binary.BigEndian.Uint16(pkt[6:8])
-		p.IpFlags = uint8(flags >> 13)
-		p.IpFlagOffset = flags & 0x1FFF
-		
 		p.Protocol = pkt[9]
 		p.SrcIp = pkt[12:16]
 
