@@ -48,7 +48,10 @@ func (req *MysqlRequest) publish(channel *amqp.Channel, exchange_name string, ro
 			pkt := req.Packets[idx]
 			pkt.Parse()
 			if pkt.IsValidTcpPacket && pkt.Payload!=nil && len(pkt.Payload)>0 {
-				if pkt.Payload!=nil && len(pkt.Payload)>=5/* 3(len) + 1(sequence) + 1(command) */ {
+				// Packet payload size could be just 1 byte during TCP stream converted to IP datagram
+				//   -- old code -- if pkt.Payload!=nil && len(pkt.Payload)>=5/* 3(len) + 1(sequence) + 1(command) */ {
+				// So we have to send all captured packet to MRTE-Player
+				if pkt.Payload!=nil && len(pkt.Payload)>0 {
 					*validPacketCaptured = (*validPacketCaptured) + 1
 				
 					mysqlPayload = nil
