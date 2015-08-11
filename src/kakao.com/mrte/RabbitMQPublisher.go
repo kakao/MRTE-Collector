@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	CHECKSUM_LENGTH = 11 /*IP(4) + PORT(2) + MYSQL_HEADER(5)*/
+	CHECKSUM_LENGTH = 22 /*IP(4) + PORT(2) + MYSQL_HEADER(5) + a */
 )
 
 type MysqlRequest struct {
@@ -60,7 +60,11 @@ func (req *MysqlRequest) publish(channel *amqp.Channel, exchange_name string, ro
 					mysqlPayload = append(mysqlPayload, pkt.Payload...)
 					
 					// Add checksum
-					checksum := adler32.Checksum(mysqlPayload[0:CHECKSUM_LENGTH])
+					checksum_len := len(mysqlPayload)
+					if checksum_len > CHECKSUM_LENGTH {
+						checksum_len = CHECKSUM_LENGTH
+					}
+					checksum := adler32.Checksum(mysqlPayload[0:checksum_len])
 					mysqlPayload = append(mysqlPayload, ConvertUint32ToBytesLE(checksum)...)
 				
 					bufferedMQData = append(bufferedMQData, ConvertUint32ToBytesLE(uint32(len(mysqlPayload)))...)
