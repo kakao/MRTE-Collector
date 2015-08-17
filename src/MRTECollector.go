@@ -555,7 +555,11 @@ func sendGarbageCollection(host string, port int, user string, password string){
 			payload = append(payload, mysqlHeader...)
 			
 			// Add checksum
-			checksum := adler32.Checksum(payload[0:mrte.CHECKSUM_LENGTH])
+			checksum_len := len(payload)
+			if checksum_len > mrte.CHECKSUM_LENGTH {
+				checksum_len = mrte.CHECKSUM_LENGTH
+			}
+			checksum := adler32.Checksum(payload[0:checksum_len])
 			payload = append(payload, mrte.ConvertUint32ToBytesLE(checksum)...)
 			
 			bufferedData = append(bufferedData, mrte.ConvertUint32ToBytesLE(uint32(len(payload)))...)
@@ -629,7 +633,11 @@ func sendSessionDefaultDatabase(host string, port int, user string, password str
 		payload = append(payload, init_db_bytes...)
 
 		// Add checksum
-		checksum := adler32.Checksum(payload[0:mrte.CHECKSUM_LENGTH])
+		checksum_len := len(payload)
+		if checksum_len > mrte.CHECKSUM_LENGTH {
+			checksum_len = mrte.CHECKSUM_LENGTH
+		}
+		checksum := adler32.Checksum(payload[0:checksum_len])
 		payload = append(payload, mrte.ConvertUint32ToBytesLE(checksum)...)
 
 		bufferedData = append(bufferedData, mrte.ConvertUint32ToBytesLE(uint32(len(payload)))...)
