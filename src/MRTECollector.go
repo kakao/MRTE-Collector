@@ -118,6 +118,7 @@ func main() {
 	
 	flag.Parse()
 	if device==nil || *device=="" ||
+		snaplen==nil ||
 		mysql_host==nil || *mysql_host=="" ||
 		mysql_user==nil || *mysql_user=="" ||
 		mysql_password==nil || *mysql_password=="" ||
@@ -128,6 +129,15 @@ func main() {
 		*help {	
 		flag.Usage()
 		os.Exit(0)
+	}
+	
+	if *snaplen<4*1024 { // Minimum 4K
+		*snaplen = 4*1024
+	}
+	if *snaplen>16*1024 {
+		// If snapshot length is greater than 64KB, Packet drop ratio is increasing.
+		// So never set over 16KB for snapshot length
+		panic("Snapshot length of pcap is too big. Max snapshot length is 16KB")
 	}
 
 	expr := fmt.Sprintf("tcp dst port %d", *port)
@@ -177,20 +187,44 @@ func main() {
 		go mrte.PublishMessage(workerIdx, mqConnection, *mq_exchange_name, *mq_routing_key, localIpAddress, queue, &validPacketCaptureds[idx], &mqErrorCounters[idx])
 	}
 
-	// Prepare packet capturer
-	h, err := pcap.OpenLive(*device, int32(*snaplen), true, int32(*read_timeout))
+
+	// Prepare pcap
+	h, err := pcap.Create(*device)
 	if h == nil {
-		fmt.Println(os.Stderr, "[FATAL] MRTECollector : Failed to open packet capture channel : ", err)
+		fmt.Println(os.Stderr, "[FATAL] MRTECollector : Failed to create packet capture channel : ", err)
 		return
 	}
-	defer h.Close()
+	
+	err = h.SetSnapLen(int32(*snaplen))
+	if err != nil {
+		fmt.Println("[FATAL] MRTECollector : SetSnapLen failed, ", err)
+		return
+	}
+	
+	err = h.SetReadTimeout(int32(*read_timeout))
+	if err != nil {
+		fmt.Println("[FATAL] MRTECollector : SetReadTimeout failed, ", err)
+		return
+	}
+	
+	err = h.SetBufferSize(int32(32*1024*1024)) // 5MB, Default is snapshot length 64KB
+	if err != nil {
+		fmt.Println("[FATAL] MRTECollector : SetBufferSize failed, ", err)
+		return
+	}
+
+	err = h.Activate()
+	if err != nil {
+		fmt.Println("[FATAL] MRTECollector : Activation failed, ", err)
+		return
+	}
 	
 	err = h.SetDirection("in")
 	if err != nil {
 		fmt.Println("[FATAL] MRTECollector : SetDirection failed, ", err)
 		return
 	}
-
+	
 	if expr != "" {
 		fmt.Println("[INFO]  MRTECollector : Setting capture filter to '", expr, "'")
 		ferr := h.SetFilter(expr)
@@ -198,6 +232,8 @@ func main() {
 			fmt.Println("[ERROR] MRTECollector : Failed to set packet capture filter : ", ferr)
 		}
 	}
+	
+	defer h.Close()
 	
 	// Add signal handler for KILL | SIGUSR1 | SIGUSR2
 	addSignalHandler(h, *mysql_host, int(*port), *mysql_user, *mysql_password)
@@ -321,29 +357,43 @@ func main() {
 			}
 		}else{
 			totalPacketCaptured++
-		
 			currentWorkerId = int(pkt.GetPortNo()) % realThreadCount // uint8(pkt.GetPortNo() % uint16(realThreadCount))
 			if currentWorkerId<0 {
 				currentWorkerId = 0
 			}
-			
+
 			packets[currentWorkerId] = append(packets[currentWorkerId], pkt)
 			bufferSizes[currentWorkerId] += uint64(pkt.Caplen)
-			if len(packets[currentWorkerId])<50 && bufferSizes[currentWorkerId]<(32*1024) {
-				// Need to more buffering
+										
+			// Flush buffer to mq publisher
+			if len(queues[currentWorkerId]) > (realQueueSize-5) {
+				// if internal queue has a lot of ingestion, the stop MRTE-Collector
+				panic("[FATAL] " + strconv.Itoa(currentWorkerId) + "th internal queue is fulled, required greater internal queue length")
+			}
+
+			if len(packets[currentWorkerId])>20 || bufferSizes[currentWorkerId]>(32*1024) {
+				// if array has over 20 or 32K, then push it to internal queue (Even though ingestion of internal queue is high) 
+				queues[currentWorkerId] <- &mrte.MysqlRequest{
+						BufferedData: nil, 
+						Packets: packets[currentWorkerId],
+					}
+				packets[currentWorkerId] = nil
+				bufferSizes[currentWorkerId] = 0
 				continue
 			}
 			
-			// Flush buffer to mq publisher
-			if len(queues[currentWorkerId]) > (realQueueSize-10) {
-				panic("[FATAL] " + strconv.Itoa(currentWorkerId) + "th internal queue is fulled, required greater internal queue length")
+			if len(queues[currentWorkerId]) > 1 {
+				// Just add to batch if internal queue has ingestion
+				continue
+			}else{
+				// if there's no ingestion on internal queue, push packet as soon as come
+				queues[currentWorkerId] <- &mrte.MysqlRequest{
+						BufferedData: nil, 
+						Packets: packets[currentWorkerId],
+					}
+				packets[currentWorkerId] = nil
+				bufferSizes[currentWorkerId] = 0
 			}
-			queues[currentWorkerId] <- &mrte.MysqlRequest{
-					BufferedData: nil, 
-					Packets: packets[currentWorkerId],
-				}
-			packets[currentWorkerId] = nil
-			bufferSizes[currentWorkerId] = 0
 		}
 
 		// if shutdown==true {workPool.Shutdown("mq_publish")}
@@ -544,9 +594,7 @@ func sendGarbageCollection(host string, port int, user string, password string){
 			port, _ := strconv.ParseUint(temp[1], 10, 16)
 			bytePort := mrte.ConvertUint16ToBytesLE(uint16(port))
 			
-			// Make Mysql protocol so that transfer it to MYSQL_INIT_DB command through MQueue
-			// bufferLength := 3/*payload_len*/+1/*sequence*/+1/*command*/
-			mysqlPayloadLen := mrte.ConvertUint24ToBytesBE(uint32(1/*command*/))
+			mysqlPayloadLen := mrte.ConvertUint24ToBytesLE(uint32(1/*command*/))
 			
 			mysqlHeader := []byte{0 /* Sequence==0 */, 1 /* COM_QUIT */}
 			
@@ -623,7 +671,7 @@ func sendSessionDefaultDatabase(host string, port int, user string, password str
 		
 		// Make Mysql protocol so that transfer it to MYSQL_INIT_DB command through MQueue
 		// bufferLength := 3/*payload_len*/+1/*sequence*/+1/*command*/+len(init_db_bytes)/*db_name length*/
-		mysqlPayloadLen := mrte.ConvertUint24ToBytesBE(uint32(1/*command*/+len(init_db_bytes)/*db_name length*/))
+		mysqlPayloadLen := mrte.ConvertUint24ToBytesLE(uint32(1/*command*/+len(init_db_bytes)/*db_name length*/))
 		
 		mysqlHeader := []byte{0 /* Sequence==0 */, 2 /* COM_INIT_DB */}
 		

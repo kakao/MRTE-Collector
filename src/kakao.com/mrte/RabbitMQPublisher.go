@@ -51,27 +51,23 @@ func (req *MysqlRequest) publish(channel *amqp.Channel, exchange_name string, ro
 				// Packet payload size could be just 1 byte during TCP stream converted to IP datagram
 				//   -- old code -- if pkt.Payload!=nil && len(pkt.Payload)>=5/* 3(len) + 1(sequence) + 1(command) */ {
 				// So we have to send all captured packet to MRTE-Player
-				if pkt.Payload!=nil && len(pkt.Payload)>0 {
-					*validPacketCaptured = (*validPacketCaptured) + 1
+				*validPacketCaptured = (*validPacketCaptured) + 1
+			
+				mysqlPayload = nil
+				mysqlPayload = append(mysqlPayload, pkt.SrcIp...)
+				mysqlPayload = append(mysqlPayload, ConvertUint16ToBytesLE(pkt.TcpSrcPort)...)
+				mysqlPayload = append(mysqlPayload, pkt.Payload...)
 				
-					mysqlPayload = nil
-					mysqlPayload = append(mysqlPayload, pkt.SrcIp...)
-					mysqlPayload = append(mysqlPayload, ConvertUint16ToBytesLE(pkt.TcpSrcPort)...)
-					mysqlPayload = append(mysqlPayload, pkt.Payload...)
-					
-					// Add checksum
-					checksum_len := len(mysqlPayload)
-					if checksum_len > CHECKSUM_LENGTH {
-						checksum_len = CHECKSUM_LENGTH
-					}
-					checksum := adler32.Checksum(mysqlPayload[0:checksum_len])
-					mysqlPayload = append(mysqlPayload, ConvertUint32ToBytesLE(checksum)...)
-				
-					bufferedMQData = append(bufferedMQData, ConvertUint32ToBytesLE(uint32(len(mysqlPayload)))...)
-					bufferedMQData = append(bufferedMQData, mysqlPayload...)
-				}else{
-					// Print Error.........
+				// Add checksum
+				checksum_len := len(mysqlPayload)
+				if checksum_len > CHECKSUM_LENGTH {
+					checksum_len = CHECKSUM_LENGTH
 				}
+				checksum := adler32.Checksum(mysqlPayload[0:checksum_len])
+				mysqlPayload = append(mysqlPayload, ConvertUint32ToBytesLE(checksum)...)
+			
+				bufferedMQData = append(bufferedMQData, ConvertUint32ToBytesLE(uint32(len(mysqlPayload)))...)
+				bufferedMQData = append(bufferedMQData, mysqlPayload...)
 			}
 		}
 	}else{
