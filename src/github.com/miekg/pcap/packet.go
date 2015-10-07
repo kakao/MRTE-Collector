@@ -170,6 +170,8 @@ func (p *TcpPacket) Parse(dlt int) {
 		p.Type = int(binary.BigEndian.Uint16(p.Data[12:14]))
 		p.Payload = p.Data[14:] // Strip ethernet header.
 	}else{
+		// IP-Tunneling use DLT_RAW data-link type, So there's no ethernet header
+		// But still regarding it's as TCP/IP packet 
 		p.Type = TYPE_IP        // Just regarding this packet as TCP/IP packet
 		p.Payload = p.Data      // If packet is raw | ipv4 | ipv6, then there's not ethernet header.
 	}
