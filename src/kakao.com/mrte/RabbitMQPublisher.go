@@ -23,12 +23,12 @@ type MysqlRequest struct {
 	Packets      []*pcap.TcpPacket
 }
 
-func PublishMessage(workerIdx int, mqConnection *amqp.Connection, exchange_name string, routing_key string, localIpAddress net.IP, queue chan *MysqlRequest, validPacketCaptured *uint64, mqErrorCounter *uint64) (){
+func PublishMessage(workerIdx int, dataLinkType int, mqConnection *amqp.Connection, exchange_name string, routing_key string, localIpAddress net.IP, queue chan *MysqlRequest, validPacketCaptured *uint64, mqErrorCounter *uint64) (){
 	channel := getChannel(mqConnection)
 	ipAddress := localIpAddress.To4()
 	for{
 		req := <-queue // read from a channel
-		req.publish(channel, exchange_name, routing_key, ipAddress, validPacketCaptured, mqErrorCounter)
+		req.publish(channel, exchange_name, routing_key, ipAddress, dataLinkType, validPacketCaptured, mqErrorCounter)
 	}
 }
 
@@ -38,7 +38,7 @@ func PublishMessage(workerIdx int, mqConnection *amqp.Connection, exchange_name 
  * 4-bytes     [4-bytes       4-bytes            2-bytes             variable-length     4-bytes ]...           
  * LOCAL_IP    [UNIT_LENGTH   PACKET_SOURCE_IP   PACKET_SOURCE_PORT  PACKET_DATA         CHECKSUM]...
  */
-func (req *MysqlRequest) publish(channel *amqp.Channel, exchange_name string, routing_key string, ipAddress []byte, validPacketCaptured *uint64, mqErrorCounter *uint64) {
+func (req *MysqlRequest) publish(channel *amqp.Channel, exchange_name string, routing_key string, ipAddress []byte, dataLinkType int, validPacketCaptured *uint64, mqErrorCounter *uint64) {
 	var mysqlPayload []byte
 	var bufferedMQData []byte
 	
@@ -46,7 +46,7 @@ func (req *MysqlRequest) publish(channel *amqp.Channel, exchange_name string, ro
 		bufferedMQData = append(bufferedMQData, ipAddress...)
 		for idx:=0; idx<len(req.Packets); idx++ {
 			pkt := req.Packets[idx]
-			pkt.Parse()
+			pkt.Parse(dataLinkType)
 			if pkt.IsValidTcpPacket && pkt.Payload!=nil && len(pkt.Payload)>0 {
 				// Packet payload size could be just 1 byte during TCP stream converted to IP datagram
 				//   -- old code -- if pkt.Payload!=nil && len(pkt.Payload)>=5/* 3(len) + 1(sequence) + 1(command) */ {

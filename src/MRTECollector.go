@@ -79,6 +79,8 @@ var mqErrorCounters       []uint64
 
 var localIpAddress net.IP
 
+var dataLinkType          int
+var dataLinkTypeName      string
 
 /**
  * Packet
@@ -179,12 +181,8 @@ func main() {
 	validPacketCaptureds = make([]uint64, realThreadCount)
 	mqErrorCounters = make([]uint64, realThreadCount)
 	for idx:=0; idx<realThreadCount; idx++ {
-		workerIdx := idx
 		queue := make(chan *mrte.MysqlRequest, realQueueSize)
 		queues = append(queues, queue)
-		
-		// Run sub-thread(goroutine) for publishing message
-		go mrte.PublishMessage(workerIdx, mqConnection, *mq_exchange_name, *mq_routing_key, localIpAddress, queue, &validPacketCaptureds[idx], &mqErrorCounters[idx])
 	}
 
 
@@ -224,14 +222,29 @@ func main() {
 		fmt.Println("[FATAL] MRTECollector : SetDirection failed, ", err)
 		return
 	}
-	
+
+	// Get data link type
+	dataLinkType = h.Datalink()
+	dataLinkTypeName = pcap.GetDataLinkTypeName(dataLinkType)
+
 	if expr != "" {
-		fmt.Println("[INFO]  MRTECollector : Setting capture filter to '", expr, "'")
+		fmt.Println("[INFO]  MRTECollector : device: '",*device,"', link_type:'",dataLinkTypeName,"(",dataLinkType,")', capture_filter:'", expr, "'")
 		ferr := h.SetFilter(expr)
 		if ferr != nil {
 			fmt.Println("[ERROR] MRTECollector : Failed to set packet capture filter : ", ferr)
 		}
 	}
+	
+	// Run queue publisher
+	for idx:=0; idx<realThreadCount; idx++ {
+		workerIdx := idx
+		
+		// Run sub-thread(goroutine) for publishing message
+		go mrte.PublishMessage(workerIdx, dataLinkType, mqConnection, *mq_exchange_name, *mq_routing_key, localIpAddress, queues[idx], &validPacketCaptureds[idx], &mqErrorCounters[idx])
+	}
+	
+
+	
 	
 	defer h.Close()
 	

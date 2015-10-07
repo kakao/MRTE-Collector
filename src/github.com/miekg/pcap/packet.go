@@ -40,8 +40,12 @@ const (
 	DLT_SLIP    = 8  // Serial Line IP
 	DLT_PPP     = 9  // Point-to-point Protocol
 	DLT_FDDI    = 10 // FDDI
+	DLT_RAW     = 12 // raw IP , DLT_LAW is defined as 14 in BSD(Including OpenBSD), But we don't care for that OS */
+	                 // And This could not be a IP4 or IP6, But just regarding this packet as tcp/ip packet
+	DLT_IPV4    = 228 // Raw IPv4
+	DLT_IPV6    = 229 // Raw IPv6
 )
-
+  
 const (
 	ERRBUF_SIZE = 256
 
@@ -113,7 +117,21 @@ type TcpPacket struct {
 	Payload []byte        // remaining non-header bytes ==> Tcp Payload
 }
 
-
+func GetDataLinkTypeName(dlt int) string {
+	if dlt==DLT_EN10MB {
+		return "DLT_EN10MB"
+	}else if dlt==DLT_EN3MB {
+		return "DLT_EN3MB"
+	}else if dlt==DLT_RAW {
+		return "DLT_RAW"
+	}else if dlt==DLT_IPV4 {
+		return "DLT_IPV4"
+	}else if dlt==DLT_IPV6 {
+		return "DLT_IPV6"
+	}
+	
+	return "DLT_NOT_SUPPORTED"
+}
 
 // Lookahead port no before Exact parsing.
 // This may not exact port no
@@ -145,10 +163,16 @@ func (p *TcpPacket) GetPortNo() (port uint16){
 
 // Decode decodes the headers of a Packet.
 // all method (parseIp and parseTcp) is merged into Parse()
-func (p *TcpPacket) Parse() {
+func (p *TcpPacket) Parse(dlt int) {
 	p.IsValidTcpPacket = false
-	p.Type = int(binary.BigEndian.Uint16(p.Data[12:14]))
-	p.Payload = p.Data[14:]
+	
+	if dlt==DLT_EN10MB || dlt==DLT_EN3MB {
+		p.Type = int(binary.BigEndian.Uint16(p.Data[12:14]))
+		p.Payload = p.Data[14:] // Strip ethernet header.
+	}else{
+		p.Type = TYPE_IP        // Just regarding this packet as TCP/IP packet
+		p.Payload = p.Data      // If packet is raw | ipv4 | ipv6, then there's not ethernet header.
+	}
 
 	if p.Type == TYPE_IP {
 		// p.ParseIp() -----------------------------------
