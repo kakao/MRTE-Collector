@@ -4,11 +4,10 @@ package mrte
 import (
 	"fmt"
 	"strings"
-//	"container/list"
 	"database/sql"
 )
 
-import _ "../../github.com/go-sql-driver/mysql"
+import _ "github.com/go-sql-driver/mysql"
 
 
 var replThreadStates = [...]string{

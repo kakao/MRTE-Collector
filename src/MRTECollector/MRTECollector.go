@@ -10,19 +10,14 @@ import (
 	"time"
 	"strings"
 	"errors"
-//	"sync/atomic"
-//	"container/list"
-//	"encoding/binary"
-//	"encoding/hex"
-//	"bufio"
 	"runtime"
 	"strconv"
 	"io/ioutil"
 	"hash/adler32"
 	
-	"./github.com/miekg/pcap"
-	"./github.com/streadway/amqp"
-	"./kakao.com/mrte"
+	"github.com/miekg/pcap"
+	"github.com/streadway/amqp"
+	"kakao.com/mrte"
 )
 
 const (

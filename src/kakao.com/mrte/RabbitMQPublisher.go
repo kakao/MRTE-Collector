@@ -5,13 +5,8 @@ import (
 	"fmt"
 	"net"
 	"hash/adler32"
-//	"time"
-//	"sync/atomic"
-//	"container/list"
-//	"encoding/binary"
-//	"encoding/hex"
-	"../../github.com/miekg/pcap"
-	"../../github.com/streadway/amqp"
+	"github.com/miekg/pcap"
+	"github.com/streadway/amqp"
 )
 
 const (
