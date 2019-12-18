@@ -1,6 +1,7 @@
 #!/bin/bash
 
 ./MRTECollector \
+  --direction="in" \
   --interface="eth0" \
   --port=3306 \
   --snapshot_len=8192 \
