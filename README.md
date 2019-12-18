@@ -31,6 +31,7 @@ This is MRTECollector option list.
 
 <pre>
 <ul>
+<li>--direction			: Network direction to capture packet (example : in, out")</li>
 <li>--interface			: Network interface to capture packet (example : eth0, lo")</li>
 <li>--port				: Network port to capture packet (This is the listening port of MySQL server)</li>
 <li>--snapshot_len		: Snapshot length of packet capture (default 8192)</li>

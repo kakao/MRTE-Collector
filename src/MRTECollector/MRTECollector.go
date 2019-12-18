@@ -33,6 +33,7 @@ const (
 
 var (
 	// Packet capture
+	direction   = flag.String("direction", "in", "Network direction to capture packet (in/out)")
 	device  	= flag.String("interface", "", "Network interface to capture packet (example : eth0, lo")
 	port    	= flag.Int("port", 3306, "Network port to capture packet (This is the listening port of MySQL server")
 	threads    	= flag.Int("thread_count", 4, "Message queue publisher counter")
@@ -137,7 +138,7 @@ func main() {
 		panic("Snapshot length of pcap is too big. Max snapshot length is 16KB")
 	}
 
-	expr := fmt.Sprintf("tcp dst port %d", *port)
+	expr := fmt.Sprintf("dst %s and dst port %d", *mysql_host, *port)
 	mq_uri := fmt.Sprintf("amqp://%s:%s@%s:%d/", *mq_user, *mq_password, *mq_host, *mq_port)
 	localIpAddress, dev_err := GetLocalIpAddress(*device)
 	if dev_err!=nil {
@@ -212,7 +213,7 @@ func main() {
 		return
 	}
 	
-	err = h.SetDirection("in")
+	err = h.SetDirection(*direction)
 	if err != nil {
 		fmt.Println("[FATAL] MRTECollector : SetDirection failed, ", err)
 		return
